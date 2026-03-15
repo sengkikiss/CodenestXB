@@ -1,5 +1,5 @@
-const bcrypt      = require("bcryptjs");
-const { query }   = require("../config/db");
+const bcrypt        = require("bcryptjs");
+const { query }     = require("../config/db");
 const { signToken } = require("../config/jwt");
 
 exports.login = async (req, res) => {
@@ -10,7 +10,6 @@ exports.login = async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password)))
       return res.status(401).json({ error: "Invalid credentials" });
 
-    // Get role-specific profile id
     let teacherId = null, studentId = null, staffId = null;
     if (user.role === "Teacher") {
       const [tRows] = await query("SELECT id FROM teachers WHERE user_id=?", [user.id]);
@@ -46,9 +45,8 @@ exports.me = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, email, phone, bio } = req.body;
+    const { name, email } = req.body;
     if (!name || !email) return res.status(400).json({ error: "Name and email are required" });
-    // Check email not taken by another user
     const [existing] = await query("SELECT id FROM users WHERE email=? AND id!=?", [email, req.user.id]);
     if (existing[0]) return res.status(400).json({ error: "Email already in use" });
     await query("UPDATE users SET name=?, email=? WHERE id=?", [name, email, req.user.id]);
@@ -73,8 +71,17 @@ exports.changePassword = async (req, res) => {
 
 exports.uploadAvatar = async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-    const url = `/uploads/avatars/${req.file.filename}`;
+    // Support both Cloudinary and local upload
+    let url;
+    if (req.file?.path && req.file.path.startsWith("http")) {
+      // Cloudinary upload - path contains the URL
+      url = req.file.path;
+    } else if (req.file?.filename) {
+      // Local upload
+      url = `/uploads/avatars/${req.file.filename}`;
+    } else {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
     await query("UPDATE users SET avatar_url=? WHERE id=?", [url, req.user.id]);
     res.json({ avatar_url: url });
   } catch (err) { res.status(500).json({ error: err.message }); }
